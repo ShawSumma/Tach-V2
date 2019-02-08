@@ -34,7 +34,9 @@ using floating_t = double;
 #include "obj.hpp"
 #include "lib.hpp"
 #include "vm.hpp"
+#include "opt.hpp"
 
 #include "obj_impl.hpp"
 #include "lib_impl.hpp"
 #include "vm_impl.hpp"
+#include "opt_impl.hpp"

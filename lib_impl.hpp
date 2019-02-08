@@ -35,6 +35,7 @@ Obj l_fn(Vm *vm, list &objs) {
         vm->locals.push_back({});
         vm->nlocals.push_back({});
         vm->args = objs;
+        vm->argp = 0;
         vm->stackd.push_back(vm->stack.size());
         vm->stack.push_back(nobj(vm, fn));
         vm->callstack.push_back(vm->place);

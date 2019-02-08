@@ -3,7 +3,7 @@
 
 // config
 bool timeit = false;
-bool timeinstr = false;
+bool timeinstr = true;
 bool optnames = true;
 bool optliteral = true;
 
@@ -200,7 +200,7 @@ void c_print(Obj o, std::ostream &out) {
         return;
     }
     if (o.iskind<std::nullptr_t>()) {
-        out << "None";
+        out << "0";
         return;
     }
     out << "<obj " << o.kind << ">";
@@ -314,7 +314,7 @@ void Vm::opIndex() {
 void Vm::opJump() {
     Instr i = instrs[place];
     stack.push_back(nobj(this, floating_t(place)));
-    place = i.val.get<floating_t>();
+    place = i.floval;
 }
 void Vm::opPush() {
     Instr i = instrs[place];
@@ -385,7 +385,7 @@ void Vm::call(Obj fn, list args) {
 }
 void Vm::opCall() {
     Instr i = instrs[place];
-    size_t argc = i.val.get<floating_t>();
+    size_t argc = i.floval;
     list args(argc);
     for (int i = 0; i < argc; i++) {
         args[i] = stack.back();
@@ -421,23 +421,19 @@ void Vm::opArgs() {
 }
 void Vm::opIStore() {
     Instr i = instrs[place];
-    store(i.val.get<floating_t>(), stack.back());
+    store(i.floval, stack.back());
 }
 void Vm::opILoad() {
     Instr i = instrs[place];
-    stack.push_back(get(i.val.get<floating_t>()));
+    stack.push_back(get(i.floval));
 }
-void Vm::opOLoad() {
-    Instr i = instrs[place];
-    stack.push_back(i.val);
-}
-void Vm::opOOper() {
+void Vm::opIOper() {
     Instr i = instrs[place];
     Obj rhs = stack.back();
     stack.pop_back();
     Obj lhs = stack.back();
     stack.pop_back();
-    Obj fn = i.val;
+    Obj fn = get(i.floval);
     if (not fn.iskind<fnty>()) {
         throw std::string("can only use funcs as opers not ") + std::to_string(fn.kind);
     }
@@ -447,19 +443,24 @@ void Vm::opOOper() {
 void Vm::opDefs() {
     Instr i = instrs[place];
     list args;
-    uint64_t maxp = i.val.get<floating_t>();
+    uint64_t maxp = i.floval;
     for (uint64_t p = 0; p < maxp; p++) {
         args.push_back(stack.back());
         stack.pop_back();
     }
     stack.push_back(nobj(this, args));
 }
+void Vm::opArg() {
+    Instr i = instrs[place];
+    store(i.floval, args[argp]);
+    argp += 1;
+}
 void Vm::opProc() {
     Instr i = instrs[place];
     Obj args = stack.back();
     stack.pop_back();
     if (optnames) {
-        uint64_t s = i.val.get<floating_t>();
+        uint64_t s = i.floval;
         nlocal_t::iterator it = nlocals.back().find(s);
         if (it == nlocals.back().end()) {
             dict d;
@@ -505,59 +506,13 @@ void Vm::vmrun(size_t pl) {
         &Vm::opStore,
         &Vm::opILoad,
         &Vm::opIStore,
-        &Vm::opOLoad,
-        &Vm::opOOper,
+        &Vm::opIOper,
         &Vm::opDefs,
-        &Vm::opProc
+        &Vm::opProc,
+        &Vm::opArg
     };
-    size_t max = instrs.size();
-    if (optnames) {
-        std::map<std::string, uint64_t> conv;
-        for (uint64_t pl = 0; pl < max; pl++) {
-            Instr i = instrs[pl];
-            if (i.type == Instr::LOAD || i.type == Instr::STORE || i.type == Instr::OPER
-                || i.type == Instr::PROC) {
-                std::string sv = i.val.get<std::string>();
-                std::map<std::string, uint64_t>::iterator it = conv.find(sv);
-                if (it == conv.end()) {
-                    conv[sv] = conv.size();
-                }
-            }
-            if (i.type == Instr::LOAD) {
-                if (i.val.get<std::string>() == "args") {
-                    instrs[pl].type = Instr::ARGS;
-                }
-                else if (optliteral && locals.back().find(i.val.get<std::string>()) != locals.back().end()) {
-                    instrs[pl].type = Instr::OLOAD;
-                    instrs[pl].val = locals.back()[instrs[pl].val.get<std::string>()];
-                }
-                else {
-                    instrs[pl].type = Instr::ILOAD;
-                    instrs[pl].val = nobj(this, floating_t(conv[instrs[pl].val.get<std::string>()]));
-                }
-            }
-            if (i.type == Instr::STORE) {
-                instrs[pl].type = Instr::ISTORE;
-                instrs[pl].val = nobj(this, floating_t(conv[instrs[pl].val.get<std::string>()]));
-            }
-            if (i.type == Instr::OPER) {
-                instrs[pl].type = Instr::OOPER;
-                instrs[pl].val = locals.back()[instrs[pl].val.get<std::string>()];
-            }
-            if (i.type == Instr::PROC) {
-                instrs[pl].val = nobj(this, floating_t(conv[instrs[pl].val.get<std::string>()]));
-            }
-        }
-        nlocals.push_back({});
-        for (std::pair<std::string, Obj> pr: locals.back()) {
-            std::map<std::string, uint64_t>::iterator it = conv.find(pr.first);
-            if (it == conv.end()) {
-                continue;
-            }
-            nlocals.back()[it->second] = pr.second;
-        }
-    }
     
+    size_t max = instrs.size();
     for (place = pl; place < max; place++) {
         if (noreturn) {
             stack.pop_back();
@@ -569,6 +524,7 @@ void Vm::vmrun(size_t pl) {
             begint = time();
         }
         uint64_t placeb = place;
+        // std::cout << placeb << "\t" << i.type << std::endl;
         std::invoke(funcs[i.type], this);
         if (timeit) {
             instrs[placeb].time += time()-begint;
@@ -598,7 +554,7 @@ void Vm::vmrun(size_t pl) {
         else {
             uint64_t pl = 0;
             for (Instr i: instrs) {
-                uint64_t iv = double(i.time)/1000000;
+                uint64_t iv = floating_t(i.time)/1000000;
                 if (iv != 0) {
                     std::cout << pl << "\t" << iv << std::endl;
                 }
@@ -606,4 +562,62 @@ void Vm::vmrun(size_t pl) {
             }
         }
     }
+}
+
+Instr::Instr() {}
+
+void Vm::savestate(std::ostream &os) {
+    for (Instr i: instrs) {
+        std::string name = instrTypeTo(i.type);
+        os << instrTypeTo(i.type);
+        int16_t spaces = 8-name.size();
+        for (int16_t i = spaces; i >= 0; i--) {
+            os << " ";
+        }
+        c_print(i.val, os);
+        os << std::endl;
+    }
+}
+
+Instr::TypeEnum instrTypeFrom(std::string str) {
+    std::map<std::string, Instr::TypeEnum> ret = {
+        {"INDEX", Instr::INDEX},
+        {"CALL", Instr::CALL},
+        {"ARGS", Instr::ARGS},
+        {"RETN", Instr::RETN},
+        {"JUMP", Instr::JUMP},
+        {"PUSH", Instr::PUSH},
+        {"POP", Instr::POP},
+        {"OPER", Instr::OPER},
+        {"LOAD", Instr::LOAD},
+        {"STORE", Instr::STORE},
+        {"ILOAD", Instr::ILOAD},
+        {"ISTORE", Instr::ISTORE},
+        {"IOPER", Instr::IOPER},
+        {"DEFS", Instr::DEFS},
+        {"PROC", Instr::PROC},
+        {"GARG", Instr::GARG},
+    };
+    return ret[str];
+}
+std::string instrTypeTo(Instr::TypeEnum en) {
+    std::map<Instr::TypeEnum, std::string> ret = {
+        {Instr::INDEX, "INDEX"},
+        {Instr::CALL, "CALL"},
+        {Instr::ARGS, "ARGS"},
+        {Instr::RETN, "RETN"},
+        {Instr::JUMP, "JUMP"},
+        {Instr::PUSH, "PUSH"},
+        {Instr::POP, "POP"},
+        {Instr::OPER, "OPER"},
+        {Instr::LOAD, "LOAD"},
+        {Instr::STORE, "STORE"},
+        {Instr::ILOAD, "ILOAD"},
+        {Instr::ISTORE, "ISTORE"},
+        {Instr::IOPER, "IOPER"},
+        {Instr::DEFS, "DEFS"},
+        {Instr::PROC, "PROC"},
+        {Instr::GARG, "GARG"},
+    };
+    return ret[en];
 }

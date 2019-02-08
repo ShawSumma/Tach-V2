@@ -12,11 +12,11 @@ bool c_bool(Obj);
 std::map<std::string, Obj> glob(Vm *);
 std::vector<Instr> readlns(Vm *, std::istream &); 
 
-
 class Instr {
 public:
     uint64_t count = 0;
     uint64_t time = 0;
+    floating_t floval;
     Obj val;
     enum {
         INDEX = 0,
@@ -36,21 +36,23 @@ public:
 
         ILOAD = 10,
         ISTORE = 11,
+        IOPER = 12,
 
-        OLOAD = 12,
-        OOPER = 13,
 
-        DEFS = 14,
-        PROC = 15,
+        DEFS = 13,
+        PROC = 14,
 
-        END = 16,
+        GARG = 15,
 
     } type;
+    using TypeEnum = decltype(type);
     Instr(Vm *vm, std::string name, std::string val);
+    Instr();
 };
 
 class Vm{
 public:
+    void savestate(std::ostream &);
     void opIndex();
     void opCall();
     void opArgs();
@@ -63,15 +65,16 @@ public:
     void opStore();
     void opILoad();
     void opIStore();
-    void opOLoad();
-    void opOOper();
+    void opIOper();
     void opDefs();
     void opProc();
+    void opArg();
     void call(Obj, list);
     using local_t = std::map<std::string, Obj>;
     using locals_t = std::vector<local_t>;
     locals_t locals;
     list args{0};
+    uint16_t argp;
     using nlocal_t = std::map<uint64_t, Obj>;
     using nlocals_t = std::vector<nlocal_t>;
     nlocals_t nlocals;
@@ -91,3 +94,6 @@ public:
     void vmrun(size_t pl);
     std::string ccompile();
 };
+
+Instr::TypeEnum instrTypeFrom(std::string);
+std::string instrTypeTo(Instr::TypeEnum);
