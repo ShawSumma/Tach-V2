@@ -1,6 +1,8 @@
 #pragma once
 #include "lang.hpp"
 
+// runtime library, very incomplete
+
 Obj l_ret(Vm *, list &);
 Obj l_fn(Vm *, list &);
 Obj l_if(Vm *, list &);

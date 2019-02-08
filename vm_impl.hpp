@@ -1,28 +1,34 @@
 #pragma once
 #include "vm.hpp"
 
+// config
 bool timeit = false;
 bool timeinstr = false;
 bool optnames = true;
 bool optliteral = true;
 
+// get unix time in nanosecs
 uint64_t time() {
     return std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::high_resolution_clock::now().time_since_epoch()).count();
 }
 
+// errors
+// bad argument count
 std::string argumenterr(size_t c) {
     return "function needs " + std::to_string(c) + " args";
 }
 
+// type mismatch
 std::string matcherr(list objs) {
     return "types do not match";
 }
 
+// something else is wrong with types
 std::string typeerr() {
     return "type error";
 }
 
-
+// numbrs can have _ as their first char
 bool isnumber(std::string str) {
     for (char c: str) {
         if (not isdigit(c) and c != '_') {
@@ -523,7 +529,7 @@ void Vm::vmrun(size_t pl) {
                 }
                 else if (optliteral && locals.back().find(i.val.get<std::string>()) != locals.back().end()) {
                     instrs[pl].type = Instr::OLOAD;
-                    instrs[pl].val = nobj(this, locals.back()[instrs[pl].val.get<std::string>()]);
+                    instrs[pl].val = locals.back()[instrs[pl].val.get<std::string>()];
                 }
                 else {
                     instrs[pl].type = Instr::ILOAD;
@@ -536,7 +542,7 @@ void Vm::vmrun(size_t pl) {
             }
             if (i.type == Instr::OPER) {
                 instrs[pl].type = Instr::OOPER;
-                instrs[pl].val = nobj(this, locals.back()[instrs[pl].val.get<std::string>()]);
+                instrs[pl].val = locals.back()[instrs[pl].val.get<std::string>()];
             }
             if (i.type == Instr::PROC) {
                 instrs[pl].val = nobj(this, floating_t(conv[instrs[pl].val.get<std::string>()]));
