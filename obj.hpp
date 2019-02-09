@@ -9,12 +9,12 @@ Obj nobj(Vm *vm, T val);
 struct Obj {
     std::shared_ptr<void> val;
 public:
-    uint8_t kind;
+    uint32_t kind;
     template<typename T>
     void objfrom(Vm *v, T val);
     Obj();
     template<typename T>
-    T &get();
+    T &get() const;
     template<typename T>
     bool iskind();
 };
@@ -22,5 +22,6 @@ public:
 // object comare less than
 struct ObjCMP {
 public:
-    bool operator()(Obj lhs, Obj rhs);
+    bool Less(Obj, Obj);
+    bool operator()(Obj, Obj);
 };

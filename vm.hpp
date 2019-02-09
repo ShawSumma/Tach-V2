@@ -44,6 +44,9 @@ public:
 
         GARG = 15,
 
+        DUP = 16,
+        SWAP = 17,
+
     } type;
     using TypeEnum = decltype(type);
     Instr(Vm *vm, std::string name, std::string val);
@@ -69,6 +72,8 @@ public:
     void opDefs();
     void opProc();
     void opArg();
+    void opDup();
+    void opSwap();
     void call(Obj, list);
     using local_t = std::map<std::string, Obj>;
     using locals_t = std::vector<local_t>;
@@ -83,6 +88,7 @@ public:
     std::vector<size_t> stackd;
     std::vector<Instr> instrs;
     std::vector<size_t> callstack;
+    std::map<std::string, uint64_t> conv;
     size_t place;
     bool noreturn = false;
     Vm();

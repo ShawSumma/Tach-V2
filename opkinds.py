@@ -8,6 +8,8 @@ kind_names = [
     
     'PUSH',
     'POP',
+    'DUP',
+    'SWAP',
 
     'OPER',
     'LOAD',

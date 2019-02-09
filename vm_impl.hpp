@@ -31,7 +31,7 @@ std::string typeerr() {
 // numbrs can have _ as their first char
 bool isnumber(std::string str) {
     for (char c: str) {
-        if (not isdigit(c) and c != '_') {
+        if (not isdigit(c) and c != '_' and c != '.') {
             return false;
         }
     }
@@ -136,6 +136,14 @@ Instr::Instr(Vm *vm, std::string instr, std::string val) {
         this->val = nobj(vm, nullptr);
         this->type = POP;
     }
+    else if (instr == "DUP   ") {
+        this->val = nobj(vm, nullptr);
+        this->type = DUP;
+    }
+    else if (instr == "SWAP  ") {
+        this->val = nobj(vm, nullptr);
+        this->type = SWAP;
+    }
     else if (instr == "RETN  ") {
         floating_t v;
         std::stringstream ss;
@@ -196,11 +204,22 @@ void c_print(Obj o, std::ostream &out) {
         return;
     }
     if (o.iskind<dict>()) {
-        out << "<dict>";
+        out << "dict(";
+        bool beginning = true;
+        for (std::pair<Obj, Obj> pr: o.get<dict>()) {
+            c_print(pr.first, out);
+            out << " ";
+            c_print(pr.second, out);
+            if (not beginning) {
+                out << " ";
+            }
+            beginning = false;
+        }
+        out << ")";
         return;
     }
     if (o.iskind<std::nullptr_t>()) {
-        out << "0";
+        out << "none";
         return;
     }
     out << "<obj " << o.kind << ">";
@@ -210,13 +229,13 @@ bool c_bool(Obj o) {
         return o.get<bool>();
     }
     if (o.iskind<floating_t>()) {
-        return o.get<floating_t>() == 0;
+        return o.get<floating_t>() != 0;
     }
     if (o.iskind<std::string>()) {
-        return o.get<std::string>() == "";
+        return o.get<std::string>() != "";
     }
     if (o.iskind<list>()) {
-        return o.get<list>().size() == 0;
+        return o.get<list>().size() != 0;
     }
     return false;
 }
@@ -235,6 +254,9 @@ std::map<std::string, Obj> glob(Vm *vm) {
         {">",     nobj<fnty>(vm, l_opgt)},
         {">=",    nobj<fnty>(vm, l_opgte)},
         {"->",    nobj<fnty>(vm, l_range)},
+        {"**",     nobj<fnty>(vm, l_oppow)},
+        {"&&",     nobj<fnty>(vm, l_opand)},
+        {"||",     nobj<fnty>(vm, l_opor)},
         {"log",   nobj<fnty>(vm, l_log)},
         {"fn",    nobj<fnty>(vm, l_fn)},
         {"ret",   nobj<fnty>(vm, l_ret)},
@@ -242,6 +264,14 @@ std::map<std::string, Obj> glob(Vm *vm) {
         {"list",  nobj<fnty>(vm, l_list)},
         {"true",  nobj<bool>(vm, true)},
         {"false", nobj<bool>(vm, false)},
+        {"typeid", nobj<fnty>(vm, l_typeid)},
+        {"none", nobj<floating_t>(vm, 0)},
+        {"number", nobj<floating_t>(vm, 1)},
+        {"boolean", nobj<floating_t>(vm, 2)},
+        {"string", nobj<floating_t>(vm, 3)},
+        {"list", nobj<floating_t>(vm, 4)},
+        {"proc", nobj<floating_t>(vm, 5)},
+        {"dict", nobj<floating_t>(vm, 6)},
     };
     return ret;
 }
@@ -320,9 +350,13 @@ void Vm::opPush() {
     Instr i = instrs[place];
     stack.push_back(i.val);
 }
-void Vm::opPop() {
+void Vm::opDup() {
     Instr i = instrs[place];
-    stack.pop_back();
+    stack.push_back(stack.back());
+}
+void Vm::opSwap() {
+    Instr i = instrs[place];
+    std::iter_swap(stack.end()-1, stack.end()-2);
 }
 void Vm::opRetn() {
     Instr i = instrs[place];
@@ -343,6 +377,7 @@ void Vm::call(Obj fn, list args) {
     int16_t argc = args.size();
     if (fn.iskind<fnty>()) {
         fnty cfn = fn.get<fnty>();
+        // std::cout << stack.size() << std::endl;
         stack.back() = cfn(this, args);
     }
     else if (fn.iskind<dict>()) {
@@ -356,8 +391,12 @@ void Vm::call(Obj fn, list args) {
                 bool okay = true;
                 for (int16_t i = 0; i < argc; i++) {
                     Obj o = ls[i];
+                    // c_print(o, std::cout);
+                    // std::cout << "\t=?\t";
+                    // c_print(args[i], std::cout);
+                    // std::cout << std::endl;
                     if (not o.iskind<std::nullptr_t>()) {
-                        if (c_equal(o, args[i]) && c_equal(args[i], o)) {
+                        if (c_equal(o, args[i])) {
                             bc ++;
                         }
                         else {
@@ -371,6 +410,11 @@ void Vm::call(Obj fn, list args) {
                     fn = pr.second;;
                 }
             }
+        }
+        if (fn.iskind<std::nullptr_t>()) {
+            std::stringstream ss;
+            c_print(nobj(this, args), ss);
+            throw std::string("cannot match function with args ") + ss.str();
         }
         call(fn, args);
     }
@@ -388,7 +432,8 @@ void Vm::opCall() {
     size_t argc = i.floval;
     list args(argc);
     for (int i = 0; i < argc; i++) {
-        args[i] = stack.back();
+        // args[argc-i-1] = stack.back();
+        args[argc-1-i] = stack.back();
         stack.pop_back();
     }
     Obj fn = stack.back();
@@ -419,6 +464,10 @@ void Vm::opArgs() {
     Instr i = instrs[place];
     stack.push_back(nobj(this, args));
 }
+void Vm::opPop() {
+    Instr i = instrs[place];
+    stack.pop_back();
+}
 void Vm::opIStore() {
     Instr i = instrs[place];
     store(i.floval, stack.back());
@@ -442,10 +491,10 @@ void Vm::opIOper() {
 }
 void Vm::opDefs() {
     Instr i = instrs[place];
-    list args;
     uint64_t maxp = i.floval;
+    list args(maxp);
     for (uint64_t p = 0; p < maxp; p++) {
-        args.push_back(stack.back());
+        args[maxp-1-p] = stack.back();
         stack.pop_back();
     }
     stack.push_back(nobj(this, args));
@@ -462,18 +511,23 @@ void Vm::opProc() {
     if (optnames) {
         uint64_t s = i.floval;
         nlocal_t::iterator it = nlocals.back().find(s);
+        // c_print(args, std::cout);
+        // std::cout << std::endl;
+        dict d;
         if (it == nlocals.back().end()) {
-            dict d;
             d.insert({args, stack.back()});
             nlocals.back()[s] = nobj(this, d);
             stack.push_back(nobj(this, d));
         }
         else {
-            dict d = it->second.get<dict>();
+            // c_print(it->second, std::cout);
+            // std::cout << std::endl;
+            d = it->second.get<dict>();
             d[args] = stack.back();
             store(s, nobj(this, d));
             stack.push_back(nobj(this, d));
         }
+        // std::cout << s << " : " << d.size() << std::endl;
     }
     else {
         std::string s = i.val.get<std::string>();
@@ -509,7 +563,9 @@ void Vm::vmrun(size_t pl) {
         &Vm::opIOper,
         &Vm::opDefs,
         &Vm::opProc,
-        &Vm::opArg
+        &Vm::opArg,
+        &Vm::opDup,
+        &Vm::opSwap
     };
     
     size_t max = instrs.size();
@@ -519,6 +575,9 @@ void Vm::vmrun(size_t pl) {
             noreturn = false;
         }
         Instr i = instrs[place];
+        // std::cout << "place : " << place << std::endl;
+        // std::cout << "size : " << stack.size() << std::endl;
+        // printstack();
         uint64_t begint;
         if (timeit) {
             begint = time();
@@ -597,6 +656,8 @@ Instr::TypeEnum instrTypeFrom(std::string str) {
         {"DEFS", Instr::DEFS},
         {"PROC", Instr::PROC},
         {"GARG", Instr::GARG},
+        {"DUP", Instr::DUP},
+        {"SWAP", Instr::SWAP},
     };
     return ret[str];
 }
@@ -618,6 +679,8 @@ std::string instrTypeTo(Instr::TypeEnum en) {
         {Instr::DEFS, "DEFS"},
         {Instr::PROC, "PROC"},
         {Instr::GARG, "GARG"},
+        {Instr::DUP, "DUP"},
+        {Instr::SWAP, "SWAP"},
     };
     return ret[en];
 }

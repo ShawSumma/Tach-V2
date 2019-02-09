@@ -114,6 +114,14 @@ Obj l_opadd(Vm *vm, list &objs) {
     throw typeerr();
 }
 
+Obj l_oppow(Vm *vm, list &objs) {
+    if (objs[0].iskind<floating_t>() and objs[1].iskind<floating_t>()) {
+        return nobj(vm, pow(objs[0].get<floating_t>(), objs[1].get<floating_t>()));
+    }
+    throw typeerr();
+}
+
+
 // number multiplation, crash upon 0 or 1 args
 Obj l_opmul(Vm *vm, list &objs) {
     if (objs[0].iskind<floating_t>() and objs[1].iskind<floating_t>()) {
@@ -188,4 +196,16 @@ Obj l_opeq(Vm *vm, list &objs) {
 Obj l_opneq(Vm *vm, list &objs) {
     // uses c_equal, perfect opposite of l_opeq (==)
     return nobj(vm, not c_equal(objs[0], objs[1]));
+}
+
+Obj l_typeid(Vm *vm, list &objs) {
+    return nobj<floating_t>(vm, objs[0].kind);
+}
+
+Obj l_opand(Vm *vm, list &objs) {
+    return nobj<bool>(vm, c_bool(objs[0]) && c_bool(objs[1]));
+}
+
+Obj l_opor(Vm *vm, list &objs) {
+    return nobj<bool>(vm, c_bool(objs[0]) || c_bool(objs[1]));
 }

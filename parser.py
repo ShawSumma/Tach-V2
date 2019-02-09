@@ -1,35 +1,15 @@
-from __future__ import print_function
-from __future__ import division
-from __future__ import unicode_literals
-from __future__ import absolute_import
-from opkinds import kind as opkind
 import sys
-try:
-    import micropython
-    micro = True
-except ImportError:
-    micropython = None
-    micro = False
-try:
-    import future
-    ver = 2
-except ImportError:
-    int = int
-    ver = 3
+import time
+from opkinds import kind as opkind
 try:
     import __pypy__
     pypy = True
 except ImportError:
     pypy = False
 
-if micro:
-    import utime as time
-else:
-    import time
-#Opcode\.Kind\.([A-Z]+)
-
-def isnumeric(str):
-    return all(i in "0123456789._" for i in str)
+numerics = "0123456789._"
+def isnumeric(strv):
+    return all(i in numerics for i in strv)
 
 class NoReturn(object):
     pass
@@ -83,7 +63,7 @@ class Token(object):
         vm.lines[len(vm.ops)] = self.begin
         if self.kind == Token.Kind.INTEGER:
             val = float(self.tok) if self.tok[0] != '_' else -float(self.tok[1:])
-            val = int(val) if val % 1 == 0 else float(val)
+            # val = int(val) if val % 1 == 0 else float(val)
             vm.append(Opcode(opkind["PUSH"], val))
         elif self.kind == Token.Kind.FLOATING:
             vm.append(Opcode(opkind["PUSH"], float(self.tok)))
@@ -91,6 +71,8 @@ class Token(object):
             vm.append(Opcode(opkind["STR"], self.tok))
         elif self.kind == Token.Kind.NAME:
             vm.append(Opcode(opkind["LOAD"], self.tok))
+    def export(self):
+        return '(token {})'.format(self.tok)
 class Tokens(object):
     def __init__(self, tokens=[]):
         self.tokens = []
@@ -126,7 +108,11 @@ class Tokens(object):
             first = False
         if poplast:
             vm.append(Opcode(opkind["POP"]))
+    def export(self):
+        return "(tokens " + " ".join(i.export() for i in self.tokens) + ")"
+
 operators_ordered = [
+    ['.'],
     ['**'],
     ['*', '/', '%'],
     ['+', '-'],
@@ -194,11 +180,19 @@ def read_tokens(code):
     while True:
         if ret.last_char == '':
             break
+        elif ret.last_char == '.':
+            open_token(Token.Kind.OPERATOR)
+            extend_last_token(ret.last_char)
+            read()
         elif isnumeric(ret.last_char):
             open_token(Token.Kind.INTEGER)
             while isnumeric(ret.last_char) and ret.last_char != '':
                 extend_last_token(ret.last_char)
                 read()
+            if ret.return_tokens[-1].tok[-1] == '.':
+                ret.return_tokens[-1].tok = ret.return_tokens[-1].tok[:-1]
+                open_token(Token.Kind.OPERATOR)
+                extend_last_token('.')
         elif ret.last_char in ('\t', '\n', ' ', '\r'):
             read()
         elif starts_operator(ret.last_char):
@@ -220,7 +214,7 @@ def read_tokens(code):
             str_type = ret.last_char
             read()
             open_token(Token.Kind.STRING)
-            while ret.last_char != str_type:
+            while (ret.last_char != '"' and str_type == '"') or (ret.last_char in word_chars + list(numerics) and str_type == '\''):
                 if ret.last_char == '\\':
                     read()
                     extend_last_token(escape_seqs[ret.last_char])
@@ -281,18 +275,47 @@ class Operator(object):
     def __repr__(self):
         return "(op {} {} {})".format(self.kind, self.lhs, self.rhs)
     def conv(self, vm):
-        if self.kind.tok == '=':
-            if isinstance(self.lhs, (Call, Braced)):
+        if self.kind.tok == '.':
+            self.rhs.fn.conv(vm)
+            self.lhs.conv(vm)
+            vm.append(Opcode(opkind["DUP"]))
+            vm.append(Opcode(opkind["LOAD"], "typeid"))
+            vm.append(Opcode(opkind["SWAP"]))
+            if isinstance(self.rhs, Call):
+                vm.append(Opcode(opkind["CALL"], 1))
+                vm.append(Opcode(opkind["SWAP"]))
+                # self.lhs.conv(vm)
+                self.rhs.args.conv(vm)
+                vm.append(Opcode(opkind["CALL"], len(self.rhs.args.val.tokens)+2))
+        elif self.kind.tok == '=':
+            if isinstance(self.lhs, (Call, Braced, Operator)):
                 islambda = isinstance(self.lhs, Braced)
-                args = self.lhs if islambda else self.lhs.args
-                    
-                if self.lhs.kind == '()':
+                ismethod =  isinstance(self.lhs, Operator)
+                ismethod = ismethod and self.lhs.kind.tok == '.'
+                # ismethod = ismethod and isinstance(self.lhs.rhs, Call)
+                # ismethod = ismethod and self.lhs.fn.kind == '.'
+                if ismethod:
+                    args = self.lhs.rhs.args
+                else:
+                    args = self.lhs if islambda else self.lhs.args
+                if self.lhs.kind == '()' or ismethod:
                     vm.append(Opcode(opkind["LOAD"], "fn"))
                     jmpind = len(vm.ops)
                     vm.append(Opcode(opkind["JUMP"]))
+                    if ismethod:
+                        vm.append(Opcode(opkind["LOAD"], "args"))
+                        vm.append(Opcode(opkind["PUSH"], 0))
+                        vm.append(Opcode(opkind["INDEX"]))
+                        vm.append(Opcode(opkind["STORE"], "self"))
+                        vm.append(Opcode(opkind["POP"]))  
+                        vm.append(Opcode(opkind["LOAD"], "args"))
+                        vm.append(Opcode(opkind["PUSH"], 1))
+                        vm.append(Opcode(opkind["INDEX"]))
+                        vm.append(Opcode(opkind["STORE"], "this"))
+                        vm.append(Opcode(opkind["POP"]))                        
                     for pl, i in enumerate(args.val):
                         vm.append(Opcode(opkind["LOAD"], "args"))
-                        vm.append(Opcode(opkind["PUSH"], pl))
+                        vm.append(Opcode(opkind["PUSH"], pl + ismethod*2))
                         vm.append(Opcode(opkind["INDEX"]))
                         vm.append(Opcode(opkind["STORE"], i.tok))
                         vm.append(Opcode(opkind["POP"]))
@@ -300,18 +323,24 @@ class Operator(object):
                     self.rhs.conv(vm)
                     # vm.marknex = True
                     vm.append(Opcode(opkind["CALL"], 1))
-                    vm.ops[jmpind].value = len(vm.ops)-1
                     # vm.ops[jmpind+1].target = True
+                    vm.ops[jmpind].value = len(vm.ops)-1
                     # vm.marknex = True
                     vm.append(Opcode(opkind["CALL"], 1))
                     # vm.ops[-1].target = True
+                    if ismethod:
+                        vm.append(Opcode(opkind["LOAD"], self.lhs.lhs.tok))
+                        vm.append(Opcode(opkind["PUSH"], None))
                     for pl, i in enumerate(args.val):
-                        if i.kind == Token.Kind.NAME:
+                        if i.kind == Token.Kind.NAME and i.tok not in ["true", "false"]:
                             vm.append(Opcode(opkind["PUSH"], None))
                         else:
                             i.conv(vm)
-                    vm.append(Opcode(opkind["DEFS"], len(args.val)))
-                    if not islambda:
+                    if ismethod:
+                        vm.append(Opcode(opkind["DEFS"], len(args.val)+2))
+                        vm.append(Opcode(opkind["PROC"], self.lhs.rhs.fn.tok))
+                    elif not islambda:
+                        vm.append(Opcode(opkind["DEFS"], len(args.val)))
                         vm.append(Opcode(opkind["PROC"], self.lhs.fn.tok))
             else:
                 self.rhs.conv(vm)
@@ -321,6 +350,8 @@ class Operator(object):
                 self.lhs.conv(vm)
             self.rhs.conv(vm)
             vm.append(Opcode(opkind["OPER"], self.kind.tok))
+    def export(self):
+        return "(op {} {} {})".format(self.kind.export(), self.lhs.export(), self.rhs.export())
 
 class Braced(object):
     def __init__(self, kind, val):
@@ -358,6 +389,8 @@ class Braced(object):
                 vm.append(Opcode(opkind["LIST"], len(self.val)))
             else:
                 self.val.conv(vm, base=False, poplast=False)
+    def export(self):
+        return "(braced " + self.name + " " + self.val.export() + ")"
 
 class Call(object):
     def __init__(self, fn, args):
@@ -386,6 +419,8 @@ class Call(object):
             # vm.append(Opcode(opkind["POP"]))
             vm.append(Opcode(opkind["CALL"], 1))
             vm.marknex = True
+    def export(self):
+        return "(call {} {})".format(self.fn.export(), self.args.export())
 
 def indexfn(lis, ind):
     return lis[ind] if isinstance(ind, int) else [indexfn(lis, i) for i in ind]
@@ -406,6 +441,7 @@ operfns = {
     '||': lambda x, y: x or y,
     '&&': lambda x, y: x and y,
     '->': lambda x, y: list(range(x, y)),
+    ':': indexfn,
 }
 
 def strfn(arg):
@@ -438,6 +474,10 @@ class Vm(object):
     def op_jump(self, value):
         self.stack.append(self.place)
         self.jmp(value)
+    def op_dup(self, value):
+        self.stack.append(self.stack[-1])
+    def op_swap(self, value):
+        self.stack[-1], self.stack[-2] = self.stack[-2], self.stack[-1]
     def op_call(self, value):
         if isinstance(value, (tuple, list)):
             args = value
@@ -470,8 +510,12 @@ class Vm(object):
                     if bc >= best:
                         best = bc
                         fn = curfn
-            self.stack[-1] = fn
-            self.op_call(args)
+            if fn is None:
+                print(cans)
+                raise NameError("cannot call with args " + str(args))
+            else:
+                self.stack[-1] = fn
+                self.op_call(args)
         else:
             self.callstack.append(self.place)
             fn = self.stack[-1]
@@ -509,7 +553,7 @@ class Vm(object):
         for i in range(value):
             args.append(self.stack[-1])
             self.stack.pop()
-        self.stack.append(tuple(args))
+        self.stack.append(tuple(args[::-1]))
 
     opfns = {
         opkind["PUSH"]: op_push,
@@ -524,6 +568,8 @@ class Vm(object):
         opkind["STR"]: op_push,
         opkind["PROC"]: op_proc,
         opkind["DEFS"]: op_defs,
+        opkind["DUP"]: op_dup,
+        opkind["SWAP"]: op_swap,
     }
     def glob(self):
         def loadfn(place, *args):
@@ -572,6 +618,23 @@ class Vm(object):
         def call_fn(fn, *args):
             self.stack.append(fn)
             self.op_call(args)
+        def dictof_fn(*args):
+            ret = {}
+            pl = 0
+            mpl = len(args)
+            while pl < mpl:
+                ret[args[pl]] = args[pl+1]
+                pl += 2
+            return ret
+        listof = lambda *args: list(args)
+        def typeid_fn(arg):
+            if callable(arg):
+                return fnfn
+            if isinstance(arg, list):
+                return listof
+            if isinstance(arg, dict):
+                return dictof_fn
+            return type(arg)
         ret = {
             'log': logfn,
             # 'save': savefn,
@@ -583,7 +646,13 @@ class Vm(object):
             'ret': retfn,
             'fn': fnfn,
             'len': len,
-            'list': lambda *args: list(args),
+            'list': listof,
+            'dict': dictof_fn,
+            'proc': fnfn,
+            'string': str,
+            'boolean': bool,
+            'number': float,
+            'typeid': typeid_fn,
         }
         for i in operfns:
             ret[i] = operfns[i]
@@ -636,7 +705,7 @@ class Vm(object):
                 self.append(i)
         # self.marknex = False
     def jmp(self, val):
-        self.place = val
+        self.place = int(val)
     def run(self):
         while self.place < self.max:
             op = self.ops[self.place]
@@ -778,6 +847,10 @@ def dof(name="auto.txt", mode="run", *rest):
     # for code_string in code_string.split('\n'):
     tokens = read_tokens(code_string)
     tree = read_tree(tokens)
+    exp = tree.export()
+    ft = open("cache/tree.txt", 'w')
+    ft.write(exp)
+    ft.close()
     vm = Vm()
     tree.conv(vm, base=True, poplast=False)
     if '--version' in rest:
@@ -808,5 +881,6 @@ def dof(name="auto.txt", mode="run", *rest):
         cProfile.runctx('vm.prun()', None, locals())
     elif '--opcode' not in rest:
         vm.prun()
-dof(*sys.argv[1:])
+if __name__ == "__main__":
+    dof(*sys.argv[1:])
 # cProfile.run('vm.run()')
