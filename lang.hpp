@@ -18,7 +18,6 @@
 struct Vm;
 struct Obj;
 // ObjCMP is for object maps, also use in l_opeq (==) and  l_opneq (!=)
-struct ObjCMP;
 struct Instr;
 
 
@@ -28,7 +27,8 @@ using list = std::vector<Obj>;
 // functions need a vm to run in and a list of arguments
 using fnty = std::function<Obj(Vm *, list &)>;
 // dicts (python, tach) are also known as tables (lua) and here in c++ they are just maps
-using dict = std::map<Obj, Obj, ObjCMP>;
+// using dict =  std::map<Obj, Obj, ObjCMP>;
+struct dict;
 // all numerical operations rely on floating_t
 using floating_t = double;
 

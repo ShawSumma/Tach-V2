@@ -21,6 +21,7 @@ kind_names = [
     'DEFS',
 
     'ANYA',
+    'MODIF',
 ]
 kind = {}
 for pl, i in enumerate(kind_names):

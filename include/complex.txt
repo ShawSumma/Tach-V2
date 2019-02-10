@@ -1,0 +1,37 @@
+Complex = class(dict('r 0 'i 0))
+Complex:add(other) = {
+    this.r = this.r + other.r
+    this.i = this.i + other.i
+    ret(this)
+}
+Complex:sub(other) = {
+    this.r = this.r - other.r
+    this.i = this.i - other.i
+    ret(this)
+}
+Complex:mul(other) = {
+    rr = this.r * other.r
+    ri = this.r * other.i
+    ir = this.i * other.r
+    ii = this.i * other.i
+    ret(Complex:new(rr-ii ri+ir))
+}
+Complex:div(other) = {
+    invb = Complex:new(other.r 0 - other.i)
+    num = this:mul(other)
+    den = other:mul(invb)
+    iden = Complex:new(1/den.r 0)
+    val = num:mul(iden)
+    ret(val)
+}
+Complex:new(real imag) = {
+    this.r = real
+    this.i = imag
+    ret(this)
+}
+Complex:dist(other) = {
+    ret(((this.r - other.r) ** 2 + (this.i - other.i) ** 2) ** 0.5)
+}
+Complex:dist() = this:dist(Complex:new(0 0))
+Complex:abs() = (this.r ** 2 + this.i ** 2) ** 0.5
+Complex:print() = log(this.r ", " this.i "i")

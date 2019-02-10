@@ -5,17 +5,6 @@ void opt_required(Vm *vm) {
     opt_names(vm);
 }
 
-void opt_floval(Vm *vm) {
-    for (uint64_t pl = 0; pl < vm->instrs.size(); pl ++) {
-        if (vm->instrs[pl].val.iskind<floating_t>()) {
-            vm->instrs[pl].floval = vm->instrs[pl].val.get<floating_t>();
-        }
-        else {
-            vm->instrs[pl].floval = 0;
-        }
-    }
-}
-
 void opt_loadargs(Vm *vm) {
     std::vector<Instr> instrs = vm->instrs;
     vm->instrs = {};
@@ -34,7 +23,10 @@ void opt_loadargs(Vm *vm) {
                 vm->instrs.push_back(i);
                 pl += 5;
             }
-            vm->instrs[size].val = nobj<floating_t>(vm, vm->instrs[size].val.get<floating_t>()+offs);
+            Obj val = vm->instrs[size].val;
+            if (val.iskind<floating_t>()) {
+                vm->instrs[size].val = nobj<floating_t>(vm, val.get<floating_t>()+offs);
+            }
         }
         vm->instrs.push_back(instrs[pl]);            
     }

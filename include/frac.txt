@@ -1,0 +1,46 @@
+#import complex.txt
+
+Number:print() = log(this)
+Number:abs() = {
+    if (this < 0) {
+        ret(0-this)
+    }
+    ret(this)
+}
+
+mandelbrot(c z rem) = {
+    z = z:mul(z)
+    if (z:abs() > 2) {
+        ret(rem)
+    }
+    ret(mandelbrot(c z:add(c) rem-1))
+}
+mandelbrot(c z 0) = 0
+mandelbrot(c) = mandelbrot(c Complex:new(0 0) 25)
+mandelbrot(x y) = {
+    rev = mandelbrot(Complex:new(x y))
+    ret(rev)
+}
+
+mprint(n) = " "
+mprint(0) = "#"
+
+mset(imag from to step) = {
+    if (from <= to) {
+        out(mprint(mandelbrot(from imag)))
+        mset(imag from+step to step)
+    }
+    ret(0)
+}
+
+
+mset(from to step) = {
+    if (from <= to) {
+        mset(from 0-1.5 0.5 step/2)
+        newline()
+        mset(from+step to step)
+    }
+    ret(0)
+}
+
+mset(step) = mset(0-1.2 1.2 step)

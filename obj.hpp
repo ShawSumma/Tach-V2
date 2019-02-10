@@ -19,9 +19,17 @@ public:
     bool iskind();
 };
 
-// object comare less than
-struct ObjCMP {
+struct dict {
 public:
-    bool Less(Obj, Obj);
-    bool operator()(Obj, Obj);
+    std::vector<Obj> keys;
+    std::vector<Obj> vals;
+    dict();
+    dict(const dict &);
+    Obj &get(Obj);
+    void set(Obj, Obj);
+    size_t size();
+    size_t find(Obj);   
+    Obj &key(size_t);
+    Obj &val(size_t);
+    void insert(Obj, Obj);
 };

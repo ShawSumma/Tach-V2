@@ -1,6 +1,8 @@
 #pragma once
 #include "obj.hpp"
 
+
+
 // this is what the api should use to creat new objects
 template<typename T>
 Obj nobj(Vm *vm, T val) {
@@ -106,78 +108,60 @@ template<>
 bool Obj::iskind<std::nullptr_t>() {
     return kind == 0;
 }
-// compare objects, does not work with dicts
-// if its not able to be checked it must be not less than
-// if lhs and rhs are compared both ways it can be infered lhs and rhs are equal
-// or equally untestable
-bool ObjCMP::Less(Obj lhs, Obj rhs) {
-    // no implicit type cast
-    if (lhs.kind != rhs.kind) {
-        // none < floating < bool < std::string < list < dict
-        return lhs.kind < rhs.kind;
-    }
-    if (lhs.iskind<floating_t>()) {
-        return lhs.get<floating_t>() < rhs.get<floating_t>();
-    }
-    if (lhs.iskind<std::string>()) {
-        // compares strings the result's sign is the answer
-        return lhs.get<std::string>().compare(rhs.get<std::string>()) < 0;
-    }
-    if (lhs.iskind<bool>()) {
-        // only true if lhs == false && rhs == true
-        return lhs.get<bool>() < rhs.get<bool>();
-    }
-    if (lhs.iskind<list>()) {
-        // lists are checked for order along with vaue
-        list lhl = lhs.get<list>();
-        list rhl = rhs.get<list>();
-        size_t lsize = lhl.size();
-        size_t rsize = rhl.size();
-        // unequal size is okay but has value
-        if (lsize != rsize) {
-            return lsize < rsize;
-        }
-        for (size_t i = 0; i < lsize; i++) {
-            if (not c_equal(lhl[i], rhl[i])) {
-                return ObjCMP::Less(lhl[i], rhl[i]);
-            }
-        }
-    }
-    // they are equally untestable, none is less than the other
-    return false;
+dict::dict() {
+    keys = {};
+    vals = {};
 }
+dict::dict(const dict &d) {
+    keys = d.keys;
+    vals = d.vals;
+}
+Obj &dict::get(Obj k) {
+    size_t i = 0;
+    for (Obj key: keys) {
+        if (c_equal(key, k)) {
+            return vals[i];
+        }
+        i ++;
+    }
+    std::stringstream ss;
+    c_print(k, ss);
+    ss << " (out of) " << keys.size();
+    throw std::string("cannot get dict key ") + ss.str();
 
-bool ObjCMP::operator()(Obj lhs, Obj rhs) {
-     if (lhs.kind != rhs.kind) {
-        // none < floating < bool < std::string < list < dict
-        return lhs.kind < rhs.kind;
-    }
-    if (lhs.iskind<floating_t>()) {
-        return lhs.get<floating_t>() < rhs.get<floating_t>();
-    }
-    if (lhs.iskind<std::string>()) {
-        // compares strings the result's sign is the answer
-        return lhs.get<std::string>().compare(rhs.get<std::string>()) < 0;
-    }
-    if (lhs.iskind<bool>()) {
-        // only true if lhs == false && rhs == true
-        return lhs.get<bool>() < rhs.get<bool>();
-    }
-    if (lhs.iskind<list>()) {
-        // lists are checked for order along with vaue
-        list lhl = lhs.get<list>();
-        list rhl = rhs.get<list>();
-        size_t lsize = lhl.size();
-        size_t rsize = rhl.size();
-        // unequal size is okay but has value
-        if (lsize != rsize) {
-            return lsize < rsize;
+}
+void dict::set(Obj k, Obj v) {
+    size_t i = 0;
+    for (Obj key: keys) {
+        if (c_equal(key, k)) {
+            vals[i] = v;
+            return;
         }
-        for (size_t i = 0; i < lsize; i++) {
-            if ((*this)(lhl[i], rhl[i])) {
-                return true;
-            }
-        }
+        i ++;
     }
-    return false;
+    keys.push_back(k);
+    vals.push_back(v);
+}
+size_t dict::size() {
+    return keys.size();
+}
+size_t dict::find(Obj k) {
+    size_t i = 0;
+    for (Obj key: keys) {
+        if (c_equal(key, k)) {
+            return i;
+        }
+        i ++;
+    }
+    throw std::string("cannot find dict key");
+}
+Obj &dict::key(size_t ki) {
+    return keys[ki];
+}
+Obj &dict::val(size_t vi) {
+    return vals[vi];
+}
+void dict::insert(Obj k, Obj v) {
+    keys.push_back(k);
+    vals.push_back(v);
 }

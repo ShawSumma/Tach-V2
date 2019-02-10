@@ -1,0 +1,22 @@
+to_n(true) = 1
+to_n(false) = 0
+Boolean:to_n() = to_n(this)
+Number:to_n() = this
+Number:hasbit(n) = this % 2 ** (n+1) >= 2 ** n
+
+Number:andbit(other at) = (this:hasbit(at) && other:hasbit(at)):to_n()
+Number:and(other at) = this:andbit(other at) * 2 ** at + this:and(other at-1)
+Number:and(other 0) = this:andbit(other 0)
+Number:and(other) = this:and(other 31)
+
+Number:xorbit(other at) = (this:hasbit(at):to_n() + other:hasbit(at):to_n() == 1):to_n()
+Number:xor(other at )= this:xorbit(other at) * 2 ** at + this:xor(other at-1)
+Number:xor(other 0) = this:xorbit(other 0)
+Number:xor(other) = this:xor(other 31)
+
+Number:orbit(other at) = (this:hasbit(at) || other:hasbit(at)):to_n()
+Number:or(other at) = this:orbit(other at) * 2 ** at + this:or(other at-1)
+Number:or(other 0) = this:orbit(other 0)
+Number:or(other) = this:or(other 31)
+
+Number:neg() = 0-(this+1)

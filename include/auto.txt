@@ -1,0 +1,3 @@
+#import frac.txt
+
+mset(0.1)

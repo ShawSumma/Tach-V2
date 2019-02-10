@@ -6,6 +6,7 @@ std::string argumenterr(size_t);
 std::string matcherr(list);
 std::string typeerr();
 bool c_equal(Obj, Obj);
+bool c_equal_types(Vm *, Obj, Obj);
 void c_print(Obj, std::ostream &);
 bool c_bool(Obj);
 
@@ -16,7 +17,6 @@ class Instr {
 public:
     uint64_t count = 0;
     uint64_t time = 0;
-    floating_t floval;
     Obj val;
     enum {
         INDEX = 0,
@@ -47,6 +47,8 @@ public:
         DUP = 16,
         SWAP = 17,
 
+        MODIF = 18,
+
     } type;
     using TypeEnum = decltype(type);
     Instr(Vm *vm, std::string name, std::string val);
@@ -74,6 +76,7 @@ public:
     void opArg();
     void opDup();
     void opSwap();
+    void opModif();
     void call(Obj, list);
     using local_t = std::map<std::string, Obj>;
     using locals_t = std::vector<local_t>;
@@ -91,6 +94,7 @@ public:
     std::map<std::string, uint64_t> conv;
     size_t place;
     bool noreturn = false;
+    uint64_t classcount = 256;
     Vm();
     Obj get(std::string val);
     Obj get(uint64_t val);

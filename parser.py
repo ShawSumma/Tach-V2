@@ -1,6 +1,8 @@
 import sys
 import time
+import os
 from opkinds import kind as opkind
+import copy
 try:
     import __pypy__
     pypy = True
@@ -112,7 +114,7 @@ class Tokens(object):
         return "(tokens " + " ".join(i.export() for i in self.tokens) + ")"
 
 operators_ordered = [
-    ['.'],
+    ['.', ':'],
     ['**'],
     ['*', '/', '%'],
     ['+', '-'],
@@ -221,7 +223,8 @@ def read_tokens(code):
                 else:
                     extend_last_token(ret.last_char)
                 read()
-            read()
+            if str_type == '"':
+                read()
         elif ret.last_char in word_chars:
             open_token(Token.Kind.NAME)
             while ret.last_char in word_chars or isnumeric(word_chars):
@@ -275,7 +278,7 @@ class Operator(object):
     def __repr__(self):
         return "(op {} {} {})".format(self.kind, self.lhs, self.rhs)
     def conv(self, vm):
-        if self.kind.tok == '.':
+        if self.kind.tok == ':':
             self.rhs.fn.conv(vm)
             self.lhs.conv(vm)
             vm.append(Opcode(opkind["DUP"]))
@@ -287,18 +290,45 @@ class Operator(object):
                 # self.lhs.conv(vm)
                 self.rhs.args.conv(vm)
                 vm.append(Opcode(opkind["CALL"], len(self.rhs.args.val.tokens)+2))
+            else:
+                raise Exception("colon operator must be called after use")
+        elif self.kind.tok == '.':
+            self.lhs.conv(vm)
+            vm.append(Opcode(opkind["STR"], self.rhs.tok))
+            vm.append(Opcode(opkind["INDEX"]))
         elif self.kind.tok == '=':
             if isinstance(self.lhs, (Call, Braced, Operator)):
                 islambda = isinstance(self.lhs, Braced)
-                ismethod =  isinstance(self.lhs, Operator)
-                ismethod = ismethod and self.lhs.kind.tok == '.'
+                isoperator =  isinstance(self.lhs, Operator)
+                ismethod = isoperator and self.lhs.kind.tok == ':'
+                isdotop = isoperator and self.lhs.kind.tok == '.'
                 # ismethod = ismethod and isinstance(self.lhs.rhs, Call)
                 # ismethod = ismethod and self.lhs.fn.kind == '.'
                 if ismethod:
                     args = self.lhs.rhs.args
+                elif isdotop:
+                    name = self.lhs.lhs
+                    rhs = self.rhs
+                    ind = self.lhs.rhs
+                    vm.append(Opcode(opkind["LOAD"], name.tok))
+                    vm.append(Opcode(opkind["STR"], ind.tok))
+                    rhs.conv(vm)
+                    vm.append(Opcode(opkind["MODIF"]))
+                    vm.append(Opcode(opkind["STORE"], name))
                 else:
                     args = self.lhs if islambda else self.lhs.args
-                if self.lhs.kind == '()' or ismethod:
+                if isdotop:
+                    pass
+                elif self.lhs.kind == '[]':
+                    name = self.lhs.fn
+                    rhs = self.rhs
+                    ind = self.lhs.args.val[0]
+                    vm.append(Opcode(opkind["LOAD"], name.tok))
+                    ind.conv(vm)
+                    rhs.conv(vm)
+                    vm.append(Opcode(opkind["MODIF"]))
+                    vm.append(Opcode(opkind["STORE"], name))
+                elif self.lhs.kind == '()' or ismethod:
                     vm.append(Opcode(opkind["LOAD"], "fn"))
                     jmpind = len(vm.ops)
                     vm.append(Opcode(opkind["JUMP"]))
@@ -386,7 +416,6 @@ class Braced(object):
         else:
             if not fromcall:
                 self.val.conv(vm, base=False, poplast=False)
-                vm.append(Opcode(opkind["LIST"], len(self.val)))
             else:
                 self.val.conv(vm, base=False, poplast=False)
     def export(self):
@@ -423,7 +452,11 @@ class Call(object):
         return "(call {} {})".format(self.fn.export(), self.args.export())
 
 def indexfn(lis, ind):
-    return lis[ind] if isinstance(ind, int) else [indexfn(lis, i) for i in ind]
+    if isinstance(ind, (int, float)):
+        return lis[int(ind)]
+    if isinstance(ind, str):
+        return lis[ind]
+    return [indexfn(lis, i) for i in ind]
 
 operfns = {
     '+': lambda x, y: x + y,
@@ -445,15 +478,17 @@ operfns = {
 }
 
 def strfn(arg):
-    if isinstance(arg, list):
+    if isinstance(arg, dict):
+        return "dict(%s)" % ' '.join(strfn(i) + " " + strfn(j) for i, j in zip(arg.keys(), arg.values()))
+    if isinstance(arg, (list, tuple)):
         return '['+' '.join(strfn(i) for i in arg)+']'
     if callable(arg):
-        if hasattr(arg, '__name__'):
-            return "<fn {}>".format(arg.__name__)
+        # if hasattr(arg, '__name__'):
+        #     return "<fn {}>".format(arg.__name__)
         return "<fn>"
     return str(arg)
 
-
+instrv = {}
 class Vm(object):
     def op_push(self, value):
         self.stack.append(value)
@@ -470,12 +505,21 @@ class Vm(object):
         else:
             raise NameError("no such name %s" % value)
     def op_store(self, value):
-        self.locals[-1][value] = self.stack[-1]
+        self.locals[-1][value] = copy.deepcopy(self.stack[-1])
     def op_jump(self, value):
         self.stack.append(self.place)
         self.jmp(value)
     def op_dup(self, value):
         self.stack.append(self.stack[-1])
+    def op_modif(self, value):
+        v = self.stack[-1]
+        self.stack.pop()
+        k = self.stack[-1]
+        self.stack.pop()
+        cont = self.stack[-1]
+        self.stack.pop()
+        cont[k] = v
+        self.stack.append(cont)
     def op_swap(self, value):
         self.stack[-1], self.stack[-2] = self.stack[-2], self.stack[-1]
     def op_call(self, value):
@@ -501,17 +545,20 @@ class Vm(object):
             for i in cans:
                 curargs, curfn = i
                 bc = 0
-                for a, b in zip(curargs, args):
+                for pl, (a, b) in enumerate(zip(curargs, args)):
+                    if pl == 0 and isinstance(a, dict):
+                        continue
                     if not a is None and a != b:
                         break
                     if a == b:
                         bc += 1
                 else:
-                    if bc >= best:
+                    if len(curargs) == len(args) and bc >= best:
                         best = bc
                         fn = curfn
             if fn is None:
-                print(cans)
+                # print(cans)
+                # print(args)
                 raise NameError("cannot call with args " + str(args))
             else:
                 self.stack[-1] = fn
@@ -570,6 +617,7 @@ class Vm(object):
         opkind["DEFS"]: op_defs,
         opkind["DUP"]: op_dup,
         opkind["SWAP"]: op_swap,
+        opkind["MODIF"]: op_modif,
     }
     def glob(self):
         def loadfn(place, *args):
@@ -602,8 +650,12 @@ class Vm(object):
             return arg
         def haltfn():
             return loadfn(len(self.ops))
+        def newline():
+            print()
+        def out(*args):
+            print(*(strfn(i) for i in args), sep='',end='')
         def logfn(*args):
-            print('log:', *(strfn(i) for i in args))
+            print('log: ', *(strfn(i) for i in args), sep='')
         def fnfn(fn):
             def retf_fn(*args):
                 self.localc.append(len(self.callstack))
@@ -627,6 +679,7 @@ class Vm(object):
                 pl += 2
             return ret
         listof = lambda *args: list(args)
+        
         def typeid_fn(arg):
             if callable(arg):
                 return fnfn
@@ -635,8 +688,16 @@ class Vm(object):
             if isinstance(arg, dict):
                 return dictof_fn
             return type(arg)
+        def class_fn(arg=None):
+            if arg == None:
+                arg = {}
+            arg['id'] = self.classno
+            self.classno += 1
+            return arg
         ret = {
             'log': logfn,
+            'out': out,
+            'newline': newline,
             # 'save': savefn,
             # 'load': loadfn,
             'halt': haltfn,
@@ -648,11 +709,15 @@ class Vm(object):
             'len': len,
             'list': listof,
             'dict': dictof_fn,
-            'proc': fnfn,
-            'string': str,
-            'boolean': bool,
-            'number': float,
+            'List': listof,
+            'Dict': dictof_fn,
+            'Proc': fnfn,
+            'String': str,
+            'Boolean': bool,
+            'Number': float,
             'typeid': typeid_fn,
+            'class': class_fn,
+            'none': None,
         }
         for i in operfns:
             ret[i] = operfns[i]
@@ -670,6 +735,7 @@ class Vm(object):
         self.callstack = []
         self.marknex = False
         self.namec = 0
+        self.classno = 256
     def opt(self):
         self.nameconv = {}
         self.numconv = []
@@ -708,12 +774,15 @@ class Vm(object):
         self.place = int(val)
     def run(self):
         while self.place < self.max:
+            begs = len(self.stack)
             op = self.ops[self.place]
             # print(self.place)
-            # print('\t\t', strfn(self.stack))
-            # print(self.place, '\t\t', op.kind, '\t', op.value)
+            # print(self.place, op.kind, op.value, strfn(self.stack))
             self.opfns[op.kind](self, op.value)
             self.place += 1
+            diff = len(self.stack)-begs
+            instrv[op.kind] = diff
+            # print(op.kind, diff)
         self.place = 0
     def lasterrln(self):
         place = self.place
@@ -836,6 +905,28 @@ def dostring(code_string):
     tree.conv(vm, base=True)
     vm.prun()
 
+def importfile(name):
+    if os.path.isfile(name):
+        name = name
+    elif os.path.exists('include') and os.path.isfile('include/'+name):
+        name = 'include/'+name
+
+    code_file = open(name)
+    code_string = code_file.read()
+    code_file.close()
+    return preprocess(code_string)
+
+def preprocess(code):
+    spl = code.split('\n')
+    ret = []
+    for i in spl:
+        if len(i) > 0 and i[0] == '#':
+            i = i[1:]
+            if i.startswith('import'):
+                ret.append(importfile(i[7:]))
+        else:
+            ret.append(i)
+    return '\n'.join(ret)
 
 def dof(name="auto.txt", mode="run", *rest):
     if '--opcode' in rest:
@@ -844,7 +935,7 @@ def dof(name="auto.txt", mode="run", *rest):
     code_file = open(name)
     code_string = code_file.read()
     code_file.close()
-    # for code_string in code_string.split('\n'):
+    code_string = preprocess(code_string)
     tokens = read_tokens(code_string)
     tree = read_tree(tokens)
     exp = tree.export()
@@ -854,18 +945,10 @@ def dof(name="auto.txt", mode="run", *rest):
     vm = Vm()
     tree.conv(vm, base=True, poplast=False)
     if '--version' in rest:
-        if micro:
-            print('MicroPython')
-        elif pypy:
-            if ver == 2:
-                print('PyPy2')
-            if ver == 3:
-                print('PyPy3')
+        if pypy:
+            print('PyPy3')
         else:
-            if ver == 2:
-                print('CPython2')
-            if ver == 3:
-                print('CPython3')
+            print('CPython3')
         
     if mode == "run":
         fo = open('cache/code.txt', 'w')

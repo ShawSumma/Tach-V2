@@ -63,21 +63,33 @@ Obj l_if(Vm *vm, list &objs) {
             return nobj(vm, nullptr);
         });
     }
-    return nobj(vm, nullptr);
+    return nobj<fnty>(vm, [](Vm *vm, list &objs) -> Obj{
+        return nobj(vm, nullptr);
+    });
 }
 // displays the objects passed to cout
 Obj l_log(Vm *vm, list &objs) {
-    bool begin = true;
     std::cout << "log: ";
     // does for all objects
     for (Obj o: objs) {
-        if (not begin) {
-            // with a space between objects
-            std::cout << " ";
-        }
+        // if (not begin) {
+        //     // with a space between objects
+        //     std::cout << " ";
+        // }
         c_print(o, std::cout);
-        begin = false;
     }
+    std::cout << std::endl;
+    return nobj(vm, nullptr);
+}
+
+Obj l_out(Vm *vm, list &objs) {
+    for (Obj o: objs) {
+        c_print(o, std::cout);
+    }
+    return nobj(vm, nullptr);
+}
+
+Obj l_newline(Vm *vm, list &objs) {
     std::cout << std::endl;
     return nobj(vm, nullptr);
 }
@@ -85,6 +97,15 @@ Obj l_log(Vm *vm, list &objs) {
 // returns arguments, because arguments are a list it makes a list
 Obj l_list(Vm *vm, list &objs) {
     return nobj(vm, objs);
+}
+
+
+Obj l_dict(Vm *vm, list &objs) {
+    dict ret;
+    for (uint64_t i = 0; i < objs.size(); i+=2) {
+        ret.set(objs[i], objs[i+1]);
+    }
+    return nobj(vm, ret);
 }
 
 // the operator a->b makes a list from a up to but not including b
@@ -199,7 +220,28 @@ Obj l_opneq(Vm *vm, list &objs) {
 }
 
 Obj l_typeid(Vm *vm, list &objs) {
+    if (objs[0].iskind<dict>()) {
+        dict d = objs[0].get<dict>();
+        size_t it = d.find(nobj<std::string>(vm, "id"));
+        if (it != d.size()) {
+            return d.val(it);
+        }
+    }
     return nobj<floating_t>(vm, objs[0].kind);
+}
+
+Obj l_class(Vm *vm, list &objs) {
+    dict d;
+    if (objs.size() > 0) {
+        d = objs[0].get<dict>();
+        d.set(nobj<std::string>(vm, "id"), nobj<floating_t>(vm, vm->classcount));
+        vm->classcount ++;
+    }
+    else {
+        d.set(nobj<std::string>(vm, "id"), nobj<floating_t>(vm, vm->classcount));
+        vm->classcount ++;
+    }
+    return nobj(vm, d);
 }
 
 Obj l_opand(Vm *vm, list &objs) {
